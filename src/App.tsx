@@ -197,7 +197,7 @@ const Home = () => {
 
   useEffect(() => {
     api.get('/providers?featured=true&limit=3')
-      .then(setFeaturedProviders)
+      .then(res => setFeaturedProviders(res.data || res))
       .catch(() => toast.error('Failed to load featured providers'))
       .finally(() => setLoadingFeatured(false));
   }, []);
