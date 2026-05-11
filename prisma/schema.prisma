@@ -1,0 +1,100 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id                String             @id @default(uuid())
+  email             String?            @unique
+  phone             String             @unique
+  password          String
+  name              String
+  wilaya            String
+  role              String             @default("CLIENT") // CLIENT, PROVIDER, ADMIN
+  isPhoneVerified   Boolean            @default(false)
+  otpCode           String?
+  otpExpires        DateTime?
+  refreshToken      String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  
+  // Provider specific fields
+  providerProfile   ProviderProfile?
+
+  // Project relations
+  projects          Project[]          @relation("ClientProjects")
+  assignedProjects  Project[]          @relation("ProviderProjects")
+}
+
+model ProviderProfile {
+  id                String             @id @default(uuid())
+  userId            String             @unique
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trade             String             // CONTRACTOR, PLUMBER, ELECTRICIAN, DESIGNER, PAINTER, OTHER
+  yearsExperience   Int
+  portfolioImages   String             // JSON string of URLs
+  idCopyUrl         String
+  verificationStatus String            @default("PENDING") // PENDING, VERIFIED, REJECTED
+  completionScore   Int                @default(0)
+  contractorTier    String?            @default("STANDARD") // "PREMIUM" | "STANDARD" | null (for non-contractors)
+  capitalAmount     Int?               // رأس المال
+  brandReputation   String?            // "LOCAL" | "REGIONAL" | "NATIONAL"
+  priceRangeMin     Int?               // للـ Premium
+  priceRangeMax     Int?               // للـ Premium
+  serviceType       String?            // "FULL_BUILD" | "SEMI_BUILD"
+  blueprintImages   String?            // JSON array of URLs
+  publicPhone       String?            // رقم الهاتف المعروض علنياً
+  publicEmail       String?            // البريد الإلكتروني المعروض علنياً
+  starRating        Int?               @default(3) // 1-5
+  reputationScore   String?            // "LOW" | "MEDIUM" | "HIGH" (للـ Standard)
+  pricePerUnit      Int?               // للـ Standard
+  completionTimeWeeks Int?               // للـ Standard
+}
+
+model Project {
+  id                String             @id @default(uuid())
+  title             String
+  description       String?
+  budget            Int
+  status            String             @default("PENDING") // PENDING, ACCEPTED, IN_PROGRESS, COMPLETED, CANCELLED
+  clientId          String
+  client            User               @relation("ClientProjects", fields: [clientId], references: [id])
+  providerId        String?
+  provider          User?              @relation("ProviderProjects", fields: [providerId], references: [id])
+  wilaya            String?
+  address           String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  milestones        Milestone[]
+  review            Review?
+}
+
+model Milestone {
+  id                String             @id @default(uuid())
+  projectId         String
+  project           Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title             String
+  description       String?
+  progress          Int                @default(0) // 0 to 100
+  status            String             @default("PENDING") // PENDING, IN_PROGRESS, COMPLETED
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+}
+
+model Review {
+  id                String             @id @default(uuid())
+  projectId         String             @unique
+  project           Project            @relation(fields: [projectId], references: [id])
+  providerId        String
+  clientId          String
+  rating            Int
+  comment           String?
+  createdAt         DateTime           @default(now())
+}
