@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 import { motion } from 'motion/react';
 import { Phone, User, MapPin, Lock, Briefcase, Award, Loader2 } from 'lucide-react';
 import { WILAYAS } from '@/constants';
+import { auth } from '@/lib/firebase';
 
 const TRADES = [
   { value: 'CONTRACTOR', label: 'General Contractor' },

@@ -2,6 +2,19 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { Request, Response, NextFunction } from 'express';
 import prisma from './db/prisma';
+import admin from 'firebase-admin';
+
+// Initialize Firebase Admin (using environment variables if available)
+try {
+  if (!admin.apps.length) {
+    admin.initializeApp({
+      projectId: 'binakink', // From user's config
+    });
+    console.log('Firebase Admin initialized for project: binakink');
+  }
+} catch (error) {
+  console.error('Error initializing Firebase Admin:', error);
+}
 
 const ACCESS_TOKEN_SECRET = process.env.ACCESS_TOKEN_SECRET || 'binalink-access-secret';
 const REFRESH_TOKEN_SECRET = process.env.REFRESH_TOKEN_SECRET || 'binalink-refresh-secret';
@@ -12,6 +25,89 @@ export interface AuthRequest extends Request {
     role: string;
   };
 }
+
+// Added Firebase sync handler
+export const firebaseSync = async (req: Request, res: Response) => {
+  const { idToken } = req.body;
+  console.log('Received firebase-sync request');
+
+  if (!idToken) {
+    console.error('ID token missing in request');
+    return res.status(400).json({ error: 'ID token required' });
+  }
+
+  try {
+    console.log('Verifying ID token...');
+    let decodedToken;
+    try {
+      decodedToken = await admin.auth().verifyIdToken(idToken);
+    } catch (verifyError: any) {
+      console.error('VerifyIdToken failed:', verifyError);
+      return res.status(401).json({ error: 'Auth failed: ' + (verifyError.message || 'Invalid token') });
+    }
+
+    const { uid, email, name, phone_number } = decodedToken;
+    console.log('Token verified for UID:', uid, 'Email:', email, 'Phone:', phone_number);
+
+    // Find or create user in our database
+    let user = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { firebaseUid: uid },
+          { email: email || undefined },
+          { phone: phone_number || undefined }
+        ].filter(cond => Object.values(cond)[0] !== undefined)
+      },
+      include: { providerProfile: true }
+    });
+
+    if (!user) {
+      // Create new user if not found
+      user = await prisma.user.create({
+        data: {
+          name: name || email?.split('@')[0] || 'User',
+          email: email || undefined,
+          phone: phone_number || uid.substring(0, 15), // Fallback
+          password: await bcrypt.hash(uid, 10), // Placeholder password
+          role: 'CLIENT',
+          firebaseUid: uid,
+          isPhoneVerified: !!phone_number,
+          wilaya: 'Unknown' // Default
+        },
+        include: { providerProfile: true }
+      });
+    } else if (!user.firebaseUid) {
+      // Update existing user with firebase UID
+      user = await prisma.user.update({
+        where: { id: user.id },
+        data: { firebaseUid: uid },
+        include: { providerProfile: true }
+      });
+    }
+
+    const { accessToken, refreshToken } = generateTokens({ id: user.id, role: user.role });
+    
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { refreshToken }
+    });
+
+    res.json({
+      user: { 
+        id: user.id, 
+        name: user.name, 
+        role: user.role, 
+        isPhoneVerified: user.isPhoneVerified,
+        completionScore: user.providerProfile?.completionScore || 100
+      },
+      accessToken,
+      refreshToken
+    });
+  } catch (err) {
+    console.error('Firebase verify error:', err);
+    res.status(401).json({ error: 'Invalid Firebase token' });
+  }
+};
 
 // Helper to calculate completion score
 export const calculateCompletionScore = (user: any, profile?: any) => {

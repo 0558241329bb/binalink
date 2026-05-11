@@ -1,10 +1,12 @@
 import express from 'express';
+import http from 'http';
+import { Server } from 'socket.io';
 import cors from 'cors';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { 
   register, login, verifyOTP, sendOTP, refresh, 
-  authenticate, AuthRequest, authorize 
+  authenticate, AuthRequest, authorize, firebaseSync 
 } from './server/auth';
 import prisma from './server/db/prisma';
 
@@ -85,10 +87,33 @@ async function startServer() {
   }
 
   const app = express();
+  const httpServer = http.createServer(app);
+  const io = new Server(httpServer, {
+    cors: {
+      origin: "*", 
+      methods: ["GET", "POST"]
+    }
+  });
+
+  io.on('connection', (socket) => {
+    console.log('a user connected');
+    socket.on('disconnect', () => {
+      console.log('user disconnected');
+    });
+  });
+
   const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
   app.use(cors());
   app.use(express.json());
+
+  app.get('/api/health', (req, res) => {
+    res.json({ 
+      status: 'ok', 
+      env: process.env.NODE_ENV,
+      time: new Date().toISOString()
+    });
+  });
 
   // --- AUTH ROUTES ---
   app.post('/api/auth/register', register);
@@ -96,6 +121,7 @@ async function startServer() {
   app.post('/api/auth/refresh', refresh);
   app.post('/api/auth/verify-otp', verifyOTP);
   app.post('/api/auth/send-otp', sendOTP);
+  app.post('/api/auth/firebase-sync', firebaseSync);
 
   // --- PROVIDER ENDPOINTS ---
   app.get('/api/providers', async (req, res) => {
@@ -411,8 +437,10 @@ async function startServer() {
     }
   });
 
+  const isProduction = process.env.NODE_ENV === 'production' || process.env.RENDER === 'true';
+
   // Vite middleware for development
-  if (process.env.NODE_ENV !== 'production') {
+  if (!isProduction) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
@@ -426,7 +454,7 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
 }
